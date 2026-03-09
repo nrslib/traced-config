@@ -502,6 +502,21 @@ describe('traced-config API contract', () => {
     expect(errors[0]).toMatchObject({ key: 'nodeEnv', value: 'staging' });
   });
 
+  it('should report unregistered string format names from validate()', async () => {
+    const config = await createConfig({
+      schema: {
+        port: { doc: 'test doc', default: 8080, format: 'prot' },
+      },
+    });
+
+    const errors = config.validate();
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ key: 'port', value: 8080 });
+    expect(errors[0]?.message).toMatch(/format/i);
+    expect(errors[0]?.message).toContain('prot');
+  });
+
   it('should register custom parser and load custom extension file', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
     const customFile = join(dir, 'custom.cfg');
@@ -531,6 +546,112 @@ describe('traced-config API contract', () => {
     expect(config.get('port')).toBe('7345');
     expect(config.get('host')).toBe('custom.example');
     expect(config.getOrigin('port')).toBe('local');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('should include path and label context when file parsing fails', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const invalidJsonFile = join(dir, 'broken.json');
+    await writeFile(invalidJsonFile, '{"port": }', 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        port: { doc: 'test doc', default: 8080 },
+      },
+    });
+
+    let caught: unknown;
+    try {
+      await config.loadFile([{ path: invalidJsonFile, label: 'local' }]);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain(invalidJsonFile);
+    expect((caught as Error).message).toContain('local');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('should not expose dotenv line contents in parse errors', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const envFile = join(dir, '.env');
+    const secret = 'super-secret-token';
+    await writeFile(envFile, `API_TOKEN ${secret}\n`, 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        apiToken: { doc: 'test doc', default: '' },
+      },
+    });
+
+    let caught: unknown;
+    try {
+      await config.loadFile([{ path: envFile, label: 'local' }]);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain(envFile);
+    expect((caught as Error).message).toContain('local');
+    expect((caught as Error).message).not.toContain(secret);
+    expect((caught as Error).message).not.toContain('API_TOKEN');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('should expose schema metadata for introspection', async () => {
+    const config = await createConfig({
+      schema: {
+        port: {
+          doc: 'Port used by the server',
+          default: 8080,
+          format: 'port',
+          env: 'CUSTOM_PORT',
+          arg: 'custom-port',
+          sources: { global: true, local: true, env: true, cli: true },
+        },
+      },
+    });
+
+    const getSchema = (config as unknown as { getSchema?: () => Record<string, unknown> }).getSchema;
+    expect(typeof getSchema).toBe('function');
+
+    const introspected = getSchema?.();
+
+    expect(introspected).toMatchObject({
+      port: {
+        doc: 'Port used by the server',
+        default: 8080,
+        format: 'port',
+        env: 'CUSTOM_PORT',
+        arg: 'custom-port',
+        sources: { global: true, local: true, env: true, cli: true },
+      },
+    });
+  });
+
+  it('should load dotenv files with built-in .env parser', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const envFile = join(dir, '.env');
+    await writeFile(envFile, 'host=dotenv.example\nmode=production\n', 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        host: { doc: 'test doc', default: 'localhost', sources: { env: false } },
+        mode: { doc: 'test doc', default: 'development', sources: { env: false } },
+      },
+    });
+
+    await config.loadFile([{ path: envFile, label: 'local' }]);
+
+    expect(config.get('host')).toBe('dotenv.example');
+    expect(config.get('mode')).toBe('production');
+    expect(config.getOrigin('host')).toBe('local');
+    expect(config.getSource('host')).toBe(envFile);
 
     await rm(dir, { recursive: true, force: true });
   });

@@ -1,5 +1,47 @@
 import type { ResolvedSchemaEntry, ValidateError } from './types.js';
 
+type BuiltinFormatValidator = (key: string, value: unknown) => ValidateError | null;
+
+const BUILTIN_STRING_FORMAT_VALIDATORS: Record<string, BuiltinFormatValidator> = {
+  port: (key, value) => {
+    const valid = typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 65535;
+    return valid ? null : { key, value, message: 'port must be 0-65535' };
+  },
+  nat: (key, value) => {
+    const valid = typeof value === 'number' && Number.isInteger(value) && value >= 0;
+    return valid ? null : { key, value, message: 'nat must be a non-negative integer' };
+  },
+  int: (key, value) => {
+    const valid = typeof value === 'number' && Number.isInteger(value);
+    return valid ? null : { key, value, message: 'int must be an integer' };
+  },
+  url: (key, value) => {
+    if (typeof value !== 'string') {
+      return { key, value, message: 'url must be a string' };
+    }
+
+    try {
+      new URL(value);
+      return null;
+    } catch {
+      return { key, value, message: 'url must be a valid URL' };
+    }
+  },
+  ipaddress: (key, value) => {
+    if (typeof value !== 'string') {
+      return { key, value, message: 'ipaddress must be a string' };
+    }
+
+    const ipv4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+    const ipv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|::1|::)$/;
+    return ipv4.test(value) || ipv6.test(value) ? null : { key, value, message: 'ipaddress must be a valid IPv4 or IPv6 address' };
+  },
+};
+
+export function isBuiltinStringFormat(format: string): boolean {
+  return Object.hasOwn(BUILTIN_STRING_FORMAT_VALIDATORS, format);
+}
+
 function coerceNumberString(value: string): number | string {
   const parsed = Number(value);
   return Number.isNaN(parsed) ? value : parsed;
@@ -86,42 +128,11 @@ export function validateFormatValue(key: string, value: unknown, format: unknown
     return Array.isArray(value) ? null : { key, value, message: 'Value must be an array' };
   }
 
-  if (format === 'port') {
-    const valid = typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 65535;
-    return valid ? null : { key, value, message: 'port must be 0-65535' };
-  }
-
-  if (format === 'nat') {
-    const valid = typeof value === 'number' && Number.isInteger(value) && value >= 0;
-    return valid ? null : { key, value, message: 'nat must be a non-negative integer' };
-  }
-
-  if (format === 'int') {
-    const valid = typeof value === 'number' && Number.isInteger(value);
-    return valid ? null : { key, value, message: 'int must be an integer' };
-  }
-
-  if (format === 'url') {
-    if (typeof value !== 'string') {
-      return { key, value, message: 'url must be a string' };
+  if (typeof format === 'string') {
+    const validator = BUILTIN_STRING_FORMAT_VALIDATORS[format];
+    if (validator) {
+      return validator(key, value);
     }
-
-    try {
-      new URL(value);
-      return null;
-    } catch {
-      return { key, value, message: 'url must be a valid URL' };
-    }
-  }
-
-  if (format === 'ipaddress') {
-    if (typeof value !== 'string') {
-      return { key, value, message: 'ipaddress must be a string' };
-    }
-
-    const ipv4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
-    const ipv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|::1|::)$/;
-    return ipv4.test(value) || ipv6.test(value) ? null : { key, value, message: 'ipaddress must be a valid IPv4 or IPv6 address' };
   }
 
   return null;

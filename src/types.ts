@@ -80,5 +80,6 @@ export type TracedConfigApi<TValues extends Record<string, unknown>> = {
   getSource: <TKey extends Extract<keyof TValues, string>>(key: TKey) => string | null;
   getOrigin: <TKey extends Extract<keyof TValues, string>>(key: TKey) => Origin;
   getTraced: <TKey extends Extract<keyof TValues, string>>(key: TKey) => TracedValue<TValues[TKey]>;
+  getSchema: () => Record<string, ResolvedSchemaEntry>;
   validate: (options?: { strict?: boolean }) => ValidateError[];
 };

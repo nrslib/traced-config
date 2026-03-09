@@ -19,7 +19,7 @@ import type {
   ValidateError,
 } from './types.js';
 import { createDefaultParsers, getFileExtension, isMissingFileError, isPlainObject } from './utils.js';
-import { coerceInputValue, validateFormatValue } from './validation.js';
+import { coerceInputValue, isBuiltinStringFormat, validateFormatValue } from './validation.js';
 
 const DEFAULT_SOURCES: SourceToggles = {
   global: true,
@@ -182,7 +182,12 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
         throw new Error(`Unsupported file type for path: ${entry.path}`);
       }
 
-      const parsedRaw = parser(content);
+      let parsedRaw: unknown;
+      try {
+        parsedRaw = parser(content);
+      } catch {
+        throw new Error(`Failed to parse config file '${entry.path}' (label: ${entry.label})`);
+      }
       const parsed = isPlainObject(parsedRaw) ? parsedRaw : {};
 
       for (const [key, value] of Object.entries(parsed)) {
@@ -216,6 +221,22 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
     return resolveKey(key);
   }
 
+  function getSchema(): Record<string, ResolvedSchemaEntry> {
+    const snapshot: Record<string, ResolvedSchemaEntry> = {};
+    for (const [key, entry] of schema.entries()) {
+      snapshot[key] = {
+        default: entry.default,
+        doc: entry.doc,
+        format: entry.format,
+        env: entry.env,
+        arg: entry.arg.replace(/^--/u, ''),
+        sources: { ...entry.sources },
+      };
+    }
+
+    return snapshot;
+  }
+
   function validate(validateOptions: { strict?: boolean } = {}): ValidateError[] {
     const errors: ValidateError[] = [];
 
@@ -229,6 +250,12 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
             key,
             value: resolved.value,
             message: `${entry.format} validation failed`,
+          };
+        } else if (!validator && !isBuiltinStringFormat(entry.format)) {
+          error = {
+            key,
+            value: resolved.value,
+            message: `Unknown format '${entry.format}'`,
           };
         }
       }
@@ -261,6 +288,7 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
     getSource,
     getOrigin,
     getTraced,
+    getSchema,
     validate,
   };
 
