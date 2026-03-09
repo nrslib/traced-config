@@ -47,7 +47,7 @@ describe('traced-config API contract', () => {
   it('should return default value and default origin for schema key', async () => {
     const config = await createConfig({
       schema: {
-        port: { default: 8080 },
+        port: { doc: 'test doc', default: 8080 },
       },
     });
 
@@ -63,7 +63,7 @@ describe('traced-config API contract', () => {
     const config = await createConfig({ envStyle: 'SCREAMING_SNAKE', argStyle: 'kebab' });
 
     config.addSchema({
-      host: { default: 'localhost' },
+      host: { doc: 'test doc', default: 'localhost' },
     });
 
     expect(config.get('host')).toBe('localhost');
@@ -72,12 +72,12 @@ describe('traced-config API contract', () => {
   it('should return extended typed api from addSchema', async () => {
     const config = await createConfig({
       schema: {
-        host: { default: 'localhost' },
+        host: { doc: 'test doc', default: 'localhost' },
       },
     });
 
     const extended = config.addSchema({
-      port: { default: 8080 },
+      port: { doc: 'test doc', default: 8080 },
     });
 
     const acceptsNumber = (value: number): number => value;
@@ -90,8 +90,8 @@ describe('traced-config API contract', () => {
   it('should infer get return types from schema default values', async () => {
     const config = await createConfig({
       schema: {
-        port: { default: 8080 },
-        host: { default: 'localhost' },
+        port: { doc: 'test doc', default: 8080 },
+        host: { doc: 'test doc', default: 'localhost' },
       },
     });
 
@@ -107,19 +107,19 @@ describe('traced-config API contract', () => {
   it('should throw when addSchema defines duplicate key', async () => {
     const config = await createConfig({
       schema: {
-        port: { default: 8080 },
+        port: { doc: 'test doc', default: 8080 },
       },
     });
 
     expect(() => {
       config.addSchema({
-        port: { default: 3000 },
+        port: { doc: 'test doc', default: 3000 },
       });
     }).toThrow(/Schema key 'port' is already defined/);
   });
 
   it('should throw when get is called with undefined schema key', async () => {
-    const config = await createConfig({ schema: { port: { default: 8080 } } });
+    const config = await createConfig({ schema: { port: { doc: 'test doc', default: 8080 } } });
 
     expect(() => config.get('missingKey')).toThrow();
   });
@@ -129,19 +129,39 @@ describe('traced-config API contract', () => {
 
     expect(() => {
       config.addSchema({
-        'db.host': { default: 'localhost' },
+        'db.host': { doc: 'test doc', default: 'localhost' },
       });
     }).toThrow();
   });
 
+  it('should throw when schema entry doc is missing', async () => {
+    const config = await createConfig({});
+
+    expect(() => {
+      config.addSchema({
+        port: { default: 8080 } as unknown as { doc: string; default: number },
+      });
+    }).toThrow(/must define a non-empty doc string/);
+  });
+
+  it('should throw when schema entry doc is empty', async () => {
+    const config = await createConfig({});
+
+    expect(() => {
+      config.addSchema({
+        port: { doc: '   ', default: 8080 },
+      });
+    }).toThrow(/must define a non-empty doc string/);
+  });
+
   it('should require object entries with label in loadFile', async () => {
-    const config = await createConfig({ schema: { port: { default: 8080 } } });
+    const config = await createConfig({ schema: { port: { doc: 'test doc', default: 8080 } } });
 
     await expect(config.loadFile(['./config.yaml' as unknown as { path: string; label: 'global' | 'local' }])).rejects.toThrow();
   });
 
   it('should skip missing files in loadFile', async () => {
-    const config = await createConfig({ schema: { port: { default: 8080 } } });
+    const config = await createConfig({ schema: { port: { doc: 'test doc', default: 8080 } } });
 
     await expect(config.loadFile([{ path: '/path/does/not/exist.yaml', label: 'global' }])).resolves.toBeUndefined();
 
@@ -157,8 +177,8 @@ describe('traced-config API contract', () => {
 
     const config = await createConfig({
       schema: {
-        port: { default: 3000 },
-        host: { default: 'localhost' },
+        port: { doc: 'test doc', default: 3000 },
+        host: { doc: 'test doc', default: 'localhost' },
       },
     });
 
@@ -182,7 +202,7 @@ describe('traced-config API contract', () => {
 
     const config = await createConfig({
       schema: {
-        port: { default: 3000, format: 'port' },
+        port: { doc: 'test doc', default: 3000, format: 'port' },
       },
     });
 
@@ -206,6 +226,7 @@ describe('traced-config API contract', () => {
     const config = await createConfig({
       schema: {
         port: {
+          doc: 'test doc',
           default: 3000,
           format: 'port',
           sources: { global: true, local: true, env: true, cli: false },
@@ -226,7 +247,7 @@ describe('traced-config API contract', () => {
     process.argv = ['node', 'test', '--port', '9191'];
     const config = await createConfig({
       schema: {
-        port: { default: 8080, format: 'port' },
+        port: { doc: 'test doc', default: 8080, format: 'port' },
       },
     });
 
@@ -243,6 +264,7 @@ describe('traced-config API contract', () => {
     const config = await createConfig({
       schema: {
         port: {
+          doc: 'test doc',
           default: 3000,
           format: 'port',
           sources: { global: true, local: true, env: true, cli: true },
@@ -255,6 +277,55 @@ describe('traced-config API contract', () => {
     expect(value).toBe(9191);
     expect(config.getOrigin('port')).toBe('cli');
     expect(config.getSource('port')).toBe('--port');
+  });
+
+  it('should cache cli values at initialization even if process.argv changes later', async () => {
+    process.argv = ['node', 'test', '--port', '9191'];
+    const config = await createConfig({
+      schema: {
+        port: {
+          doc: 'test doc',
+          default: 3000,
+          format: 'port',
+          sources: { global: true, local: true, env: true, cli: true },
+        },
+      },
+    });
+
+    process.argv = ['node', 'test', '--port', '9292'];
+
+    expect(config.get('port')).toBe(9191);
+    expect(config.getOrigin('port')).toBe('cli');
+    expect(config.getSource('port')).toBe('--port');
+  });
+
+  it('should keep cli cache isolated per tracedConfig instance', async () => {
+    process.argv = ['node', 'test', '--port', '7111'];
+    const first = await createConfig({
+      schema: {
+        port: {
+          doc: 'test doc',
+          default: 3000,
+          format: 'port',
+          sources: { global: true, local: true, env: true, cli: true },
+        },
+      },
+    });
+
+    process.argv = ['node', 'test', '--port', '7222'];
+    const second = await createConfig({
+      schema: {
+        port: {
+          doc: 'test doc',
+          default: 3000,
+          format: 'port',
+          sources: { global: true, local: true, env: true, cli: true },
+        },
+      },
+    });
+
+    expect(first.get('port')).toBe(7111);
+    expect(second.get('port')).toBe(7222);
   });
 
   it('should apply default < global < local < env < cli precedence chain', async () => {
@@ -270,6 +341,7 @@ describe('traced-config API contract', () => {
     const config = await createConfig({
       schema: {
         port: {
+          doc: 'test doc',
           default: 3000,
           format: 'port',
           sources: { global: true, local: true, env: true, cli: true },
@@ -294,6 +366,7 @@ describe('traced-config API contract', () => {
     const config = await createConfig({
       schema: {
         port: {
+          doc: 'test doc',
           default: 8080,
           format: 'port',
           sources: { global: true, local: true, env: false, cli: false },
@@ -311,7 +384,7 @@ describe('traced-config API contract', () => {
     process.env.TAKT_ANTHROPIC_API_KEY = 'env-secret';
     const config = await createConfig({
       schema: {
-        taktAnthropicApiKey: { default: '', sources: { global: true, local: true, env: true, cli: false } },
+        taktAnthropicApiKey: { doc: 'test doc', default: '', sources: { global: true, local: true, env: true, cli: false } },
       },
     });
 
@@ -329,6 +402,7 @@ describe('traced-config API contract', () => {
     const config = await createConfig({
       schema: {
         port: {
+          doc: 'test doc',
           default: 8080,
           format: 'port',
           env: 'CUSTOM_PORT',
@@ -350,6 +424,7 @@ describe('traced-config API contract', () => {
     const config = await createConfig({
       schema: {
         port: {
+          doc: 'test doc',
           default: 8080,
           format: 'port',
           arg: 'custom-port',
@@ -367,7 +442,7 @@ describe('traced-config API contract', () => {
     process.env.TAGS = 'a,b,c';
     const config = await createConfig({
       schema: {
-        tags: { default: [] as string[], format: Array, env: 'TAGS', sources: { global: true, local: true, env: true, cli: false } },
+        tags: { doc: 'test doc', default: [] as string[], format: Array, env: 'TAGS', sources: { global: true, local: true, env: true, cli: false } },
       },
     });
 
@@ -381,7 +456,7 @@ describe('traced-config API contract', () => {
     process.argv = ['node', 'test', '--tags', 'red,green,blue'];
     const config = await createConfig({
       schema: {
-        tags: { default: [] as string[], format: Array, sources: { global: true, local: true, env: true, cli: true } },
+        tags: { doc: 'test doc', default: [] as string[], format: Array, sources: { global: true, local: true, env: true, cli: true } },
       },
     });
 
@@ -396,7 +471,7 @@ describe('traced-config API contract', () => {
     process.env.PORT = '-1';
     const config = await createConfig({
       schema: {
-        port: { default: 8080, format: 'port', sources: { global: true, local: true, env: true, cli: false } },
+        port: { doc: 'test doc', default: 8080, format: 'port', sources: { global: true, local: true, env: true, cli: false } },
       },
     });
 
@@ -412,6 +487,7 @@ describe('traced-config API contract', () => {
     const config = await createConfig({
       schema: {
         nodeEnv: {
+          doc: 'test doc',
           default: 'development',
           format: ['production', 'development', 'test'],
           env: 'NODE_ENV',
@@ -433,8 +509,8 @@ describe('traced-config API contract', () => {
 
     const config = await createConfig({
       schema: {
-        port: { default: 8080, format: 'port' },
-        host: { default: 'localhost' },
+        port: { doc: 'test doc', default: 8080, format: 'port' },
+        host: { doc: 'test doc', default: 'localhost' },
       },
     });
 
@@ -462,7 +538,7 @@ describe('traced-config API contract', () => {
   it('should register custom format and validate with it', async () => {
     const config = await createConfig({
       schema: {
-        evenValue: { default: 3, format: 'isEven' },
+        evenValue: { doc: 'test doc', default: 3, format: 'isEven' },
       },
     });
 
@@ -483,7 +559,7 @@ describe('traced-config API contract', () => {
     process.env.NAT_VALUE = '-1';
     const config = await createConfig({
       schema: {
-        natValue: { default: 1, format: 'nat', env: 'NAT_VALUE', sources: { global: true, local: true, env: true, cli: false } },
+        natValue: { doc: 'test doc', default: 1, format: 'nat', env: 'NAT_VALUE', sources: { global: true, local: true, env: true, cli: false } },
       },
     });
 
@@ -498,7 +574,7 @@ describe('traced-config API contract', () => {
     process.env.INT_VALUE = '1.5';
     const config = await createConfig({
       schema: {
-        intValue: { default: 2, format: 'int', env: 'INT_VALUE', sources: { global: true, local: true, env: true, cli: false } },
+        intValue: { doc: 'test doc', default: 2, format: 'int', env: 'INT_VALUE', sources: { global: true, local: true, env: true, cli: false } },
       },
     });
 
@@ -513,7 +589,7 @@ describe('traced-config API contract', () => {
     process.env.APP_URL = 'not-a-url';
     const config = await createConfig({
       schema: {
-        appUrl: { default: 'https://example.com', format: 'url', env: 'APP_URL', sources: { global: true, local: true, env: true, cli: false } },
+        appUrl: { doc: 'test doc', default: 'https://example.com', format: 'url', env: 'APP_URL', sources: { global: true, local: true, env: true, cli: false } },
       },
     });
 
@@ -528,7 +604,7 @@ describe('traced-config API contract', () => {
     process.env.HOST_IP = '999.1.1.1';
     const config = await createConfig({
       schema: {
-        hostIp: { default: '127.0.0.1', format: 'ipaddress', env: 'HOST_IP', sources: { global: true, local: true, env: true, cli: false } },
+        hostIp: { doc: 'test doc', default: '127.0.0.1', format: 'ipaddress', env: 'HOST_IP', sources: { global: true, local: true, env: true, cli: false } },
       },
     });
 
@@ -546,13 +622,14 @@ describe('traced-config API contract', () => {
 
     const config = await createConfig({
       schema: {
-        port: { default: 3000, format: 'port' },
+        port: { doc: 'test doc', default: 3000, format: 'port' },
       },
     });
     await config.loadFile([{ path: globalFile, label: 'global' }]);
 
     const errors = config.validate({ strict: true });
 
+    expect(errors.every((error) => typeof error.message === 'string')).toBe(true);
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: 'typoKey', source: globalFile, origin: 'global' }),
@@ -569,7 +646,7 @@ describe('traced-config API contract', () => {
 
     const config = await createConfig({
       schema: {
-        port: { default: 3000, format: 'port' },
+        port: { doc: 'test doc', default: 3000, format: 'port' },
       },
     });
     await config.loadFile([{ path: localFile, label: 'local' }]);

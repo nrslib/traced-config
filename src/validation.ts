@@ -1,29 +1,41 @@
 import type { ResolvedSchemaEntry, ValidateError } from './types.js';
 
+function coerceNumberString(value: string): number | string {
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? value : parsed;
+}
+
+function coerceBooleanString(value: string): boolean | string {
+  if (value === 'true' || value === '1') {
+    return true;
+  }
+
+  if (value === 'false' || value === '0') {
+    return false;
+  }
+
+  return value;
+}
+
+function coerceArrayString(value: string): string[] {
+  return value.split(',').map((part) => part.trim());
+}
+
 export function coerceInputValue(value: unknown, entry: ResolvedSchemaEntry): unknown {
   if (typeof value !== 'string') {
     return value;
   }
 
   if (entry.format === Array) {
-    return value.split(',').map((part) => part.trim());
+    return coerceArrayString(value);
   }
 
   if (entry.format === Number || entry.format === 'port' || entry.format === 'nat' || entry.format === 'int') {
-    const parsed = Number(value);
-    return Number.isNaN(parsed) ? value : parsed;
+    return coerceNumberString(value);
   }
 
   if (entry.format === Boolean) {
-    if (value === 'true' || value === '1') {
-      return true;
-    }
-
-    if (value === 'false' || value === '0') {
-      return false;
-    }
-
-    return value;
+    return coerceBooleanString(value);
   }
 
   if (entry.format === String) {
@@ -31,22 +43,15 @@ export function coerceInputValue(value: unknown, entry: ResolvedSchemaEntry): un
   }
 
   if (Array.isArray(entry.default)) {
-    return value.split(',').map((part) => part.trim());
+    return coerceArrayString(value);
   }
 
   if (typeof entry.default === 'number') {
-    const parsed = Number(value);
-    return Number.isNaN(parsed) ? value : parsed;
+    return coerceNumberString(value);
   }
 
   if (typeof entry.default === 'boolean') {
-    if (value === 'true' || value === '1') {
-      return true;
-    }
-
-    if (value === 'false' || value === '0') {
-      return false;
-    }
+    return coerceBooleanString(value);
   }
 
   return value;
