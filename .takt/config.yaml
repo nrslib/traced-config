@@ -1,0 +1,11 @@
+piece_overrides:
+  movements:
+    implement:
+      quality_gates:
+        - "Run `npm run test` and verify all tests pass"
+    fix:
+      quality_gates:
+        - "Run `npm run test` and verify all tests pass"
+    ai_fix:
+      quality_gates:
+        - "Run `npm run test` and verify all tests pass"
