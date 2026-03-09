@@ -2,10 +2,25 @@
   "name": "traced-config",
   "version": "0.0.0",
   "description": "Configuration management with key-level source tracing. Know where every value came from.",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/nrslib/traced-config.git"
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "prepublishOnly": "npm run build && npm run test"
   },
   "keywords": [
     "config",
@@ -16,5 +31,22 @@
     "env",
     "cli",
     "precedence"
-  ]
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nrslib/traced-config.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.11",
+    "eslint": "^9.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  }
 }
