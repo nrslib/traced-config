@@ -39,6 +39,7 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
   const unknownFileKeys: UnknownKeyIssue[] = [];
   const parsers = createDefaultParsers();
   const customFormats = new Map<string, FormatValidator>();
+  const cachedCliValues = parseCli(process.argv);
 
   function assertKnownKey(key: string): ResolvedSchemaEntry {
     const entry = schema.get(key);
@@ -84,8 +85,7 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
     }
 
     if (entry.sources.cli) {
-      const cliValues = parseCli(process.argv);
-      const cliValue = cliValues.get(entry.arg);
+      const cliValue = cachedCliValues.get(entry.arg);
       if (cliValue) {
         traced = {
           value: coerceInputValue(cliValue.value, entry),
@@ -110,6 +110,10 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
         throw new Error(`Schema key '${key}' is already defined`);
       }
 
+      if (typeof rawEntry.doc !== 'string' || rawEntry.doc.trim().length === 0) {
+        throw new Error(`Schema key '${key}' must define a non-empty doc string`);
+      }
+
       const env = rawEntry.env ?? buildDefaultEnvName(key, envStyle);
       const arg = rawEntry.arg ?? buildDefaultArgName(key, argStyle);
       const sources: SourceToggles = {
@@ -119,6 +123,7 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
 
       schema.set(key, {
         default: rawEntry.default,
+        doc: rawEntry.doc,
         format: rawEntry.format,
         env,
         arg: normalizeArgName(arg),

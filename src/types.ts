@@ -10,6 +10,7 @@ export type SourceToggles = {
 
 export type SchemaEntry<TDefault> = {
   default: TDefault;
+  doc: string;
   format?: unknown;
   env?: string;
   arg?: string;
@@ -30,10 +31,10 @@ export type TracedValue<TValue> = {
 
 export type ValidateError = {
   key: string;
+  message: string;
   value?: unknown;
   source?: string | null;
   origin?: string;
-  message?: string;
 };
 
 export type TracedConfigOptions<TSchema extends SchemaShape = {}> = {
@@ -47,6 +48,7 @@ export type FormatValidator = (value: unknown) => boolean;
 
 export type ResolvedSchemaEntry = {
   default: unknown;
+  doc: string;
   format?: unknown;
   env: string;
   arg: string;
