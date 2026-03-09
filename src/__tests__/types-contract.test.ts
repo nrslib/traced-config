@@ -31,4 +31,11 @@ describe('types contract', () => {
     expect(validateErrorBlock).toMatch(/\bmessage: string;/);
     expect(validateErrorBlock).not.toMatch(/\bmessage\?: string;/);
   });
+
+  it('should expose schema introspection api in TracedConfigApi', async () => {
+    const source = await readTypesSource();
+    const tracedConfigApiBlock = extractTypeBlock(source, 'TracedConfigApi');
+
+    expect(tracedConfigApiBlock).toMatch(/\bgetSchema:\s*\(\)\s*=>/);
+  });
 });
