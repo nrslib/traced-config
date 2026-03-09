@@ -1,6 +1,6 @@
 {
   "name": "traced-config",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Configuration management with key-level source tracing. Know where every value came from.",
   "type": "module",
   "main": "dist/index.js",
