@@ -1,0 +1,20 @@
+{
+  "name": "traced-config",
+  "version": "0.0.0",
+  "description": "Configuration management with key-level source tracing. Know where every value came from.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nrslib/traced-config.git"
+  },
+  "keywords": [
+    "config",
+    "configuration",
+    "trace",
+    "origin",
+    "source",
+    "env",
+    "cli",
+    "precedence"
+  ]
+}
