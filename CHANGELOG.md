@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-03-26
+
+### Added
+- ネストされたスキーマキーのサポート: `db.host` のようなドット区切りキーを `addSchema()` で定義可能に (#16)
+- 設定ファイルのネスト構造自動フラット化: YAML/JSON の階層構造をスキーマのドットキーに自動マッピング (#16)
+- プレフィックス衝突検出: `db` と `db.host` のように親子関係のあるキーを同時に定義した場合にエラーを報告 (#16)
+
+### Changed
+- 命名変換（env/arg 自動生成）がドット区切りキーに対応: `db.host` → `DB_HOST`（env）/ `--db-host`（arg） (#16)
+
 ## [0.1.0] - 2026-03-09
 
 ### Added
