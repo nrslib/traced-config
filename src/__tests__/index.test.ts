@@ -131,6 +131,98 @@ describe('traced-config API contract', () => {
     }).toThrow(/Schema key 'port' is already defined/);
   });
 
+  it('should reject schema prefix collisions in the initial schema definition', async () => {
+    await expect(
+      createConfig({
+        schema: {
+          provider_options: { doc: 'parent doc', default: { enabled: false } },
+          'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+        },
+      }),
+    ).rejects.toThrow(/prefix/i);
+  });
+
+  it('should reject schema prefix collisions when addSchema adds a parent key for an existing child key', async () => {
+    const config = await createConfig({
+      schema: {
+        'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+      },
+    });
+
+    expect(() => {
+      config.addSchema({
+        provider_options: { doc: 'parent doc', default: { enabled: false } },
+      });
+    }).toThrow(/prefix/i);
+  });
+
+  it('should reject schema prefix collisions when addSchema adds a child key for an existing parent key', async () => {
+    const config = await createConfig({
+      schema: {
+        provider_options: { doc: 'parent doc', default: { enabled: false } },
+      },
+    });
+
+    expect(() => {
+      config.addSchema({
+        'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+      });
+    }).toThrow(/prefix/i);
+  });
+
+  it('should keep schema unchanged when addSchema rejects prefix collisions within the same call', async () => {
+    const config = await createConfig({
+      schema: {
+        port: { doc: 'test doc', default: 8080 },
+      },
+    });
+
+    expect(() => {
+      config.addSchema({
+        provider_options: { doc: 'parent doc', default: { enabled: false } },
+        'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+      });
+    }).toThrow(/prefix/i);
+
+    expect(Object.keys(config.getSchema())).toEqual(['port']);
+  });
+
+  it('should fail fast for the prefix collision repro schema during schema definition', async () => {
+    await expect(
+      createConfig({
+        schema: {
+          provider_options: { doc: 'parent doc', default: { enabled: false } },
+          'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+        },
+      }),
+    ).rejects.toThrow(/prefix/i);
+  });
+
+  it('should keep the config valid for loadFile and strict validation after rejecting the repro prefix collision in addSchema', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const globalFile = join(dir, 'global.yaml');
+    await writeFile(globalFile, 'provider_options:\n  claude:\n    effort: high\n', 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+      },
+    });
+
+    expect(() => {
+      config.addSchema({
+        provider_options: { doc: 'parent doc', default: { enabled: false } },
+      });
+    }).toThrow(/prefix/i);
+
+    await config.loadFile([{ path: globalFile, label: 'global' }]);
+
+    expect(config.get('provider_options.claude.effort')).toBe('high');
+    expect(config.validate({ strict: true })).toEqual([]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('should throw when get is called with undefined schema key', async () => {
     const config = await createConfig({ schema: { port: { doc: 'test doc', default: 8080 } } });
 

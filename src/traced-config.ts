@@ -50,6 +50,16 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
     return entry;
   }
 
+  function findPrefixCollision(key: string, keys: Iterable<string>): string | null {
+    for (const existingKey of keys) {
+      if (key.startsWith(`${existingKey}.`) || existingKey.startsWith(`${key}.`)) {
+        return existingKey;
+      }
+    }
+
+    return null;
+  }
+
   function resolveKey(key: string): TracedValue<unknown> {
     const entry = assertKnownKey(key);
 
@@ -101,9 +111,19 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
   function addSchema<TNextSchema extends SchemaShape>(
     next: TNextSchema,
   ): TracedConfigApi<Record<string, unknown> & InferSchemaValues<TNextSchema>> {
+    const pendingEntries: Array<[string, ResolvedSchemaEntry]> = [];
+
     for (const [key, rawEntry] of Object.entries(next)) {
       if (schema.has(key)) {
         throw new Error(`Schema key '${key}' is already defined`);
+      }
+
+      const collidedKey = findPrefixCollision(key, schema.keys()) ?? findPrefixCollision(
+        key,
+        pendingEntries.map(([pendingKey]) => pendingKey),
+      );
+      if (collidedKey) {
+        throw new Error(`Schema key '${key}' has a prefix collision with existing key '${collidedKey}'`);
       }
 
       if (typeof rawEntry.doc !== 'string' || rawEntry.doc.trim().length === 0) {
@@ -117,14 +137,18 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
         ...(rawEntry.sources ?? {}),
       };
 
-      schema.set(key, {
+      pendingEntries.push([key, {
         default: rawEntry.default,
         doc: rawEntry.doc,
         format: rawEntry.format,
         env,
         arg: normalizeArgName(arg),
         sources,
-      });
+      }]);
+    }
+
+    for (const [key, entry] of pendingEntries) {
+      schema.set(key, entry);
     }
 
     return api as unknown as TracedConfigApi<Record<string, unknown> & InferSchemaValues<TNextSchema>>;
