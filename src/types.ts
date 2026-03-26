@@ -40,6 +40,7 @@ export type ValidateError = {
 export type TracedConfigOptions<TSchema extends SchemaShape = {}> = {
   envStyle?: 'SCREAMING_SNAKE';
   argStyle?: 'kebab';
+  defaultSources?: Partial<Pick<SourceToggles, 'env' | 'cli'>>;
   schema?: TSchema;
 };
 

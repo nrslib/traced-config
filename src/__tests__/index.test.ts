@@ -462,6 +462,98 @@ describe('traced-config API contract', () => {
     expect(config.getOrigin('port')).toBe('default');
   });
 
+  it('should disable env and cli globally through defaultSources', async () => {
+    process.env.PORT = '7070';
+    process.argv = ['node', 'test', '--port', '9191'];
+
+    const config = await createConfig({
+      defaultSources: {
+        env: false,
+        cli: false,
+      },
+      schema: {
+        port: {
+          doc: 'test doc',
+          default: 3000,
+          format: 'port',
+        },
+      },
+    });
+
+    expect(config.get('port')).toBe(3000);
+    expect(config.getOrigin('port')).toBe('default');
+    expect(config.getSource('port')).toBeNull();
+  });
+
+  it('should allow schema sources to override global defaultSources', async () => {
+    process.env.PORT = '7070';
+    process.argv = ['node', 'test', '--port', '9191'];
+
+    const config = await createConfig({
+      defaultSources: {
+        env: false,
+        cli: false,
+      },
+      schema: {
+        port: {
+          doc: 'test doc',
+          default: 3000,
+          format: 'port',
+          sources: { env: true },
+        },
+      },
+    });
+
+    expect(config.get('port')).toBe(7070);
+    expect(config.getOrigin('port')).toBe('env');
+    expect(config.getSource('port')).toBe('PORT');
+  });
+
+  it('should enable cli globally through defaultSources when requested', async () => {
+    process.env.PORT = '7070';
+    process.argv = ['node', 'test', '--port', '9191'];
+
+    const config = await createConfig({
+      defaultSources: {
+        cli: true,
+      },
+      schema: {
+        port: {
+          doc: 'test doc',
+          default: 3000,
+          format: 'port',
+        },
+      },
+    });
+
+    expect(config.get('port')).toBe(9191);
+    expect(config.getOrigin('port')).toBe('cli');
+    expect(config.getSource('port')).toBe('--port');
+  });
+
+  it('should apply defaultSources to schema added after initialization', async () => {
+    process.env.PORT = '7070';
+    process.argv = ['node', 'test', '--port', '9191'];
+
+    const config = await createConfig({
+      defaultSources: {
+        env: false,
+        cli: false,
+      },
+    });
+
+    config.addSchema({
+      port: {
+        doc: 'test doc',
+        default: 3000,
+        format: 'port',
+      },
+    });
+
+    expect(config.get('port')).toBe(3000);
+    expect(config.getOrigin('port')).toBe('default');
+  });
+
   it('should prioritize cli over env when cli source is enabled', async () => {
     process.env.PORT = '7070';
     process.argv = ['node', 'test', '--port', '9191'];
@@ -872,6 +964,36 @@ describe('traced-config API contract', () => {
         env: 'CUSTOM_PORT',
         arg: 'custom-port',
         sources: { global: true, local: true, env: true, cli: true },
+      },
+    });
+  });
+
+  it('should expose merged defaultSources in schema metadata', async () => {
+    const config = await createConfig({
+      defaultSources: {
+        env: false,
+        cli: false,
+      },
+      schema: {
+        port: {
+          doc: 'Port used by the server',
+          default: 8080,
+          format: 'port',
+        },
+        host: {
+          doc: 'Host used by the server',
+          default: 'localhost',
+          sources: { cli: true },
+        },
+      },
+    });
+
+    expect(config.getSchema()).toMatchObject({
+      port: {
+        sources: { global: true, local: true, env: false, cli: false },
+      },
+      host: {
+        sources: { global: true, local: true, env: false, cli: true },
       },
     });
   });
