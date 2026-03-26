@@ -18,7 +18,7 @@ import type {
   UnknownKeyIssue,
   ValidateError,
 } from './types.js';
-import { createDefaultParsers, getFileExtension, isMissingFileError, isPlainObject } from './utils.js';
+import { createDefaultParsers, flattenFileEntries, getFileExtension, isMissingFileError, isPlainObject } from './utils.js';
 import { coerceInputValue, isBuiltinStringFormat, validateFormatValue } from './validation.js';
 
 const DEFAULT_SOURCES: SourceToggles = {
@@ -48,6 +48,16 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
     }
 
     return entry;
+  }
+
+  function findPrefixCollision(key: string, keys: Iterable<string>): string | null {
+    for (const existingKey of keys) {
+      if (key.startsWith(`${existingKey}.`) || existingKey.startsWith(`${key}.`)) {
+        return existingKey;
+      }
+    }
+
+    return null;
   }
 
   function resolveKey(key: string): TracedValue<unknown> {
@@ -101,13 +111,19 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
   function addSchema<TNextSchema extends SchemaShape>(
     next: TNextSchema,
   ): TracedConfigApi<Record<string, unknown> & InferSchemaValues<TNextSchema>> {
-    for (const [key, rawEntry] of Object.entries(next)) {
-      if (key.includes('.')) {
-        throw new Error(`Nested schema keys are not supported: '${key}'`);
-      }
+    const pendingEntries: Array<[string, ResolvedSchemaEntry]> = [];
 
+    for (const [key, rawEntry] of Object.entries(next)) {
       if (schema.has(key)) {
         throw new Error(`Schema key '${key}' is already defined`);
+      }
+
+      const collidedKey = findPrefixCollision(key, schema.keys()) ?? findPrefixCollision(
+        key,
+        pendingEntries.map(([pendingKey]) => pendingKey),
+      );
+      if (collidedKey) {
+        throw new Error(`Schema key '${key}' has a prefix collision with existing key '${collidedKey}'`);
       }
 
       if (typeof rawEntry.doc !== 'string' || rawEntry.doc.trim().length === 0) {
@@ -121,14 +137,18 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
         ...(rawEntry.sources ?? {}),
       };
 
-      schema.set(key, {
+      pendingEntries.push([key, {
         default: rawEntry.default,
         doc: rawEntry.doc,
         format: rawEntry.format,
         env,
         arg: normalizeArgName(arg),
         sources,
-      });
+      }]);
+    }
+
+    for (const [key, entry] of pendingEntries) {
+      schema.set(key, entry);
     }
 
     return api as unknown as TracedConfigApi<Record<string, unknown> & InferSchemaValues<TNextSchema>>;
@@ -188,9 +208,9 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
       } catch {
         throw new Error(`Failed to parse config file '${entry.path}' (label: ${entry.label})`);
       }
-      const parsed = isPlainObject(parsedRaw) ? parsedRaw : {};
+      const parsedEntries = isPlainObject(parsedRaw) ? flattenFileEntries(parsedRaw, new Set(schema.keys())) : [];
 
-      for (const [key, value] of Object.entries(parsed)) {
+      for (const [key, value] of parsedEntries) {
         if (!schema.has(key)) {
           unknownFileKeys.push({ key, source: entry.path, origin: entry.label });
           continue;

@@ -2,7 +2,7 @@ export function toScreamingSnake(input: string): string {
   return input
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .replace(/([A-Z])([A-Z][a-z])/g, '$1_$2')
-    .replace(/[\s-]+/g, '_')
+    .replace(/[\s.-]+/g, '_')
     .toUpperCase();
 }
 
@@ -10,7 +10,7 @@ export function toKebab(input: string): string {
   return input
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
     .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2')
-    .replace(/[\s_]+/g, '-')
+    .replace(/[\s._]+/g, '-')
     .toLowerCase();
 }
 

@@ -104,6 +104,19 @@ describe('traced-config API contract', () => {
     expect(acceptsString(host)).toBe('localhost');
   });
 
+  it('should infer get return types from dotted schema keys', async () => {
+    const config = await createConfig({
+      schema: {
+        'provider_options.claude.effort': { doc: 'test doc', default: 'high' },
+      },
+    });
+
+    const acceptsString = (value: string): string => value;
+    const effort = config.get('provider_options.claude.effort');
+
+    expect(acceptsString(effort)).toBe('high');
+  });
+
   it('should throw when addSchema defines duplicate key', async () => {
     const config = await createConfig({
       schema: {
@@ -118,20 +131,112 @@ describe('traced-config API contract', () => {
     }).toThrow(/Schema key 'port' is already defined/);
   });
 
+  it('should reject schema prefix collisions in the initial schema definition', async () => {
+    await expect(
+      createConfig({
+        schema: {
+          provider_options: { doc: 'parent doc', default: { enabled: false } },
+          'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+        },
+      }),
+    ).rejects.toThrow(/prefix/i);
+  });
+
+  it('should reject schema prefix collisions when addSchema adds a parent key for an existing child key', async () => {
+    const config = await createConfig({
+      schema: {
+        'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+      },
+    });
+
+    expect(() => {
+      config.addSchema({
+        provider_options: { doc: 'parent doc', default: { enabled: false } },
+      });
+    }).toThrow(/prefix/i);
+  });
+
+  it('should reject schema prefix collisions when addSchema adds a child key for an existing parent key', async () => {
+    const config = await createConfig({
+      schema: {
+        provider_options: { doc: 'parent doc', default: { enabled: false } },
+      },
+    });
+
+    expect(() => {
+      config.addSchema({
+        'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+      });
+    }).toThrow(/prefix/i);
+  });
+
+  it('should keep schema unchanged when addSchema rejects prefix collisions within the same call', async () => {
+    const config = await createConfig({
+      schema: {
+        port: { doc: 'test doc', default: 8080 },
+      },
+    });
+
+    expect(() => {
+      config.addSchema({
+        provider_options: { doc: 'parent doc', default: { enabled: false } },
+        'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+      });
+    }).toThrow(/prefix/i);
+
+    expect(Object.keys(config.getSchema())).toEqual(['port']);
+  });
+
+  it('should fail fast for the prefix collision repro schema during schema definition', async () => {
+    await expect(
+      createConfig({
+        schema: {
+          provider_options: { doc: 'parent doc', default: { enabled: false } },
+          'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+        },
+      }),
+    ).rejects.toThrow(/prefix/i);
+  });
+
+  it('should keep the config valid for loadFile and strict validation after rejecting the repro prefix collision in addSchema', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const globalFile = join(dir, 'global.yaml');
+    await writeFile(globalFile, 'provider_options:\n  claude:\n    effort: high\n', 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        'provider_options.claude.effort': { doc: 'child doc', default: 'low' },
+      },
+    });
+
+    expect(() => {
+      config.addSchema({
+        provider_options: { doc: 'parent doc', default: { enabled: false } },
+      });
+    }).toThrow(/prefix/i);
+
+    await config.loadFile([{ path: globalFile, label: 'global' }]);
+
+    expect(config.get('provider_options.claude.effort')).toBe('high');
+    expect(config.validate({ strict: true })).toEqual([]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('should throw when get is called with undefined schema key', async () => {
     const config = await createConfig({ schema: { port: { doc: 'test doc', default: 8080 } } });
 
     expect(() => config.get('missingKey')).toThrow();
   });
 
-  it('should reject nested schema key names', async () => {
+  it('should allow nested schema key names', async () => {
     const config = await createConfig({});
 
-    expect(() => {
-      config.addSchema({
-        'db.host': { doc: 'test doc', default: 'localhost' },
-      });
-    }).toThrow();
+    config.addSchema({
+      'db.host': { doc: 'test doc', default: 'localhost' },
+    });
+
+    expect(config.get('db.host')).toBe('localhost');
   });
 
   it('should throw when schema entry doc is missing', async () => {
@@ -191,6 +296,106 @@ describe('traced-config API contract', () => {
     expect(config.get('host')).toBe('global.example');
     expect(config.getOrigin('port')).toBe('local');
     expect(config.getSource('port')).toBe(localFile);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('should load nested YAML and JSON into dotted schema keys', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const globalFile = join(dir, 'global.yaml');
+    const localFile = join(dir, 'local.json');
+    await writeFile(globalFile, 'provider_options:\n  claude:\n    effort: high\n  codex:\n    reasoning_effort: medium\n', 'utf8');
+    await writeFile(localFile, JSON.stringify({ provider_options: { codex: { reasoning_effort: 'xhigh' } } }), 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        'provider_options.claude.effort': { doc: 'test doc', default: 'low' },
+        'provider_options.codex.reasoning_effort': { doc: 'test doc', default: 'low' },
+      },
+    });
+
+    await config.loadFile([
+      { path: globalFile, label: 'global' },
+      { path: localFile, label: 'local' },
+    ]);
+
+    expect(config.get('provider_options.claude.effort')).toBe('high');
+    expect(config.get('provider_options.codex.reasoning_effort')).toBe('xhigh');
+    expect(config.getOrigin('provider_options.claude.effort')).toBe('global');
+    expect(config.getOrigin('provider_options.codex.reasoning_effort')).toBe('local');
+    expect(config.getSource('provider_options.codex.reasoning_effort')).toBe(localFile);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('should load deeply nested YAML into a dotted schema key', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const globalFile = join(dir, 'global.yaml');
+    const segments = ['level1', 'level2', 'level3', 'level4', 'level5', 'level6', 'level7', 'value'];
+    const nestedYaml = segments.reduceRight((child, segment, index) => {
+      const indentation = '  '.repeat(index);
+      return `${indentation}${segment}:${child === null ? ' safe' : `\n${child}`}`;
+    }, null as string | null);
+
+    await writeFile(globalFile, `${nestedYaml}\n`, 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        'level1.level2.level3.level4.level5.level6.level7.value': {
+          doc: 'test doc',
+          default: 'fallback',
+        },
+      },
+    });
+
+    await config.loadFile([{ path: globalFile, label: 'global' }]);
+
+    expect(config.get('level1.level2.level3.level4.level5.level6.level7.value')).toBe('safe');
+    expect(config.getOrigin('level1.level2.level3.level4.level5.level6.level7.value')).toBe('global');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('should reject circular references in nested YAML input', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const globalFile = join(dir, 'global.yaml');
+    await writeFile(globalFile, 'root: &a\n  self: *a\n', 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        'root.self': { doc: 'test doc', default: 'fallback' },
+      },
+    });
+
+    await expect(config.loadFile([{ path: globalFile, label: 'global' }])).rejects.toThrow(
+      /Circular references in config files are not supported/,
+    );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('should reject deeply nested JSON input with a controlled error', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const localFile = join(dir, 'config.json');
+    let payload: Record<string, unknown> = { value: 'safe' };
+    for (let index = 100; index >= 0; index -= 1) {
+      payload = { [`level${index}`]: payload };
+    }
+
+    await writeFile(localFile, JSON.stringify(payload), 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        'level0.level1.level2.level3.level4.level5.level6.level7.level8.level9.level10.level11.level12.level13.level14.level15.level16.level17.level18.level19.level20.level21.level22.level23.level24.level25.level26.level27.level28.level29.level30.level31.level32.level33.level34.level35.level36.level37.level38.level39.level40.level41.level42.level43.level44.level45.level46.level47.level48.level49.level50.level51.level52.level53.level54.level55.level56.level57.level58.level59.level60.level61.level62.level63.level64.level65.level66.level67.level68.level69.level70.level71.level72.level73.level74.level75.level76.level77.level78.level79.level80.level81.level82.level83.level84.level85.level86.level87.level88.level89.level90.level91.level92.level93.level94.level95.level96.level97.level98.level99.level100.value': {
+          doc: 'test doc',
+          default: 'fallback',
+        },
+      },
+    });
+
+    await expect(config.loadFile([{ path: localFile, label: 'local' }])).rejects.toThrow(
+      /Config file nesting exceeds maximum depth of 100/,
+    );
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -395,6 +600,25 @@ describe('traced-config API contract', () => {
     expect(config.getOrigin('taktAnthropicApiKey')).toBe('env');
   });
 
+  it('should auto-generate env name from dotted key', async () => {
+    process.env.PROVIDER_OPTIONS_CLAUDE_EFFORT = 'max';
+    const config = await createConfig({
+      schema: {
+        'provider_options.claude.effort': {
+          doc: 'test doc',
+          default: 'high',
+          sources: { global: true, local: true, env: true, cli: false },
+        },
+      },
+    });
+
+    const value = config.get('provider_options.claude.effort');
+
+    expect(value).toBe('max');
+    expect(config.getSource('provider_options.claude.effort')).toBe('PROVIDER_OPTIONS_CLAUDE_EFFORT');
+    expect(config.getOrigin('provider_options.claude.effort')).toBe('env');
+  });
+
   it('should prioritize manually configured env name over auto-generated name', async () => {
     process.env.CUSTOM_PORT = '7331';
     process.env.PORT = '8081';
@@ -436,6 +660,24 @@ describe('traced-config API contract', () => {
     expect(config.get('port')).toBe(7331);
     expect(config.getSource('port')).toBe('--custom-port');
     expect(config.getOrigin('port')).toBe('cli');
+  });
+
+  it('should auto-generate cli arg name from dotted key', async () => {
+    process.argv = ['node', 'test', '--provider-options-claude-effort', 'max'];
+
+    const config = await createConfig({
+      schema: {
+        'provider_options.claude.effort': {
+          doc: 'test doc',
+          default: 'high',
+          sources: { global: true, local: true, env: true, cli: true },
+        },
+      },
+    });
+
+    expect(config.get('provider_options.claude.effort')).toBe('max');
+    expect(config.getSource('provider_options.claude.effort')).toBe('--provider-options-claude-effort');
+    expect(config.getOrigin('provider_options.claude.effort')).toBe('cli');
   });
 
   it('should split comma-separated env value for Array format', async () => {
@@ -756,6 +998,74 @@ describe('traced-config API contract', () => {
         expect.objectContaining({ key: 'typoKey', source: globalFile, origin: 'global' }),
       ]),
     );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('should keep flat leaf-only access for nested file input', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const globalFile = join(dir, 'global.yaml');
+    await writeFile(globalFile, 'provider_options:\n  claude:\n    effort: high\n', 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        'provider_options.claude.effort': { doc: 'test doc', default: 'low' },
+      },
+    });
+
+    await config.loadFile([{ path: globalFile, label: 'global' }]);
+
+    expect(config.get('provider_options.claude.effort')).toBe('high');
+    expect(() => (config as unknown as { get: (key: string) => unknown }).get('provider_options')).toThrow(
+      /Schema key 'provider_options' is not defined/,
+    );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('should report flattened unknown nested keys in strict validation', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const globalFile = join(dir, 'global.yaml');
+    await writeFile(globalFile, 'provider_options:\n  claude:\n    effort: high\n    unknown_flag: true\n', 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        'provider_options.claude.effort': { doc: 'test doc', default: 'low' },
+      },
+    });
+    await config.loadFile([{ path: globalFile, label: 'global' }]);
+
+    const errors = config.validate({ strict: true });
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'provider_options.claude.unknown_flag',
+          source: globalFile,
+          origin: 'global',
+        }),
+      ]),
+    );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('should preserve schema-defined object values from files', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'traced-config-test-'));
+    const globalFile = join(dir, 'global.yaml');
+    const settings = { enabled: true };
+    await writeFile(globalFile, JSON.stringify({ settings }), 'utf8');
+
+    const config = await createConfig({
+      schema: {
+        settings: { doc: 'test doc', default: { enabled: false } },
+      },
+    });
+
+    await config.loadFile([{ path: globalFile, label: 'global' }]);
+
+    expect(config.get('settings')).toEqual(settings);
+    expect(config.validate({ strict: true })).toEqual([]);
 
     await rm(dir, { recursive: true, force: true });
   });
