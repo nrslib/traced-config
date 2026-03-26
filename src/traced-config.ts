@@ -18,7 +18,7 @@ import type {
   UnknownKeyIssue,
   ValidateError,
 } from './types.js';
-import { createDefaultParsers, getFileExtension, isMissingFileError, isPlainObject } from './utils.js';
+import { createDefaultParsers, flattenFileEntries, getFileExtension, isMissingFileError, isPlainObject } from './utils.js';
 import { coerceInputValue, isBuiltinStringFormat, validateFormatValue } from './validation.js';
 
 const DEFAULT_SOURCES: SourceToggles = {
@@ -102,10 +102,6 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
     next: TNextSchema,
   ): TracedConfigApi<Record<string, unknown> & InferSchemaValues<TNextSchema>> {
     for (const [key, rawEntry] of Object.entries(next)) {
-      if (key.includes('.')) {
-        throw new Error(`Nested schema keys are not supported: '${key}'`);
-      }
-
       if (schema.has(key)) {
         throw new Error(`Schema key '${key}' is already defined`);
       }
@@ -188,9 +184,9 @@ export function tracedConfig<TSchema extends SchemaShape = {}>(
       } catch {
         throw new Error(`Failed to parse config file '${entry.path}' (label: ${entry.label})`);
       }
-      const parsed = isPlainObject(parsedRaw) ? parsedRaw : {};
+      const parsedEntries = isPlainObject(parsedRaw) ? flattenFileEntries(parsedRaw, new Set(schema.keys())) : [];
 
-      for (const [key, value] of Object.entries(parsed)) {
+      for (const [key, value] of parsedEntries) {
         if (!schema.has(key)) {
           unknownFileKeys.push({ key, source: entry.path, origin: entry.label });
           continue;

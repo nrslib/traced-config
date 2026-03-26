@@ -50,6 +50,87 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+const MAX_CONFIG_NESTING_DEPTH = 100;
+
+export function flattenFileEntries(
+  value: Record<string, unknown>,
+  leafKeys: ReadonlySet<string> = new Set<string>(),
+): Array<[string, unknown]> {
+  const flattened: Array<[string, unknown]> = [];
+  const activeAncestors = new WeakSet<Record<string, unknown>>();
+  const stack: Array<{
+    value: Record<string, unknown>;
+    prefix: string;
+    entries: Array<[string, unknown]>;
+    index: number;
+    depth: number;
+  }> = [
+    {
+      value,
+      prefix: '',
+      entries: Object.entries(value),
+      index: 0,
+      depth: 0,
+    },
+  ];
+
+  activeAncestors.add(value);
+
+  while (stack.length > 0) {
+    const current = stack[stack.length - 1];
+    if (!current) {
+      break;
+    }
+
+    if (current.index >= current.entries.length) {
+      activeAncestors.delete(current.value);
+      stack.pop();
+      continue;
+    }
+
+    const nextEntry = current.entries[current.index];
+    if (!nextEntry) {
+      activeAncestors.delete(current.value);
+      stack.pop();
+      continue;
+    }
+
+    const [key, nestedValue] = nextEntry;
+    current.index += 1;
+    const dottedKey = current.prefix.length === 0 ? key : `${current.prefix}.${key}`;
+
+    if (!isPlainObject(nestedValue)) {
+      flattened.push([dottedKey, nestedValue]);
+      continue;
+    }
+
+    if (activeAncestors.has(nestedValue)) {
+      throw new Error('Circular references in config files are not supported');
+    }
+
+    if (leafKeys.has(dottedKey)) {
+      flattened.push([dottedKey, nestedValue]);
+      continue;
+    }
+
+    const nextDepth = current.depth + 1;
+    if (nextDepth > MAX_CONFIG_NESTING_DEPTH) {
+      throw new Error(`Config file nesting exceeds maximum depth of ${MAX_CONFIG_NESTING_DEPTH}`);
+    }
+
+    activeAncestors.add(nestedValue);
+    stack.push({
+      value: nestedValue,
+      prefix: dottedKey,
+      entries: Object.entries(nestedValue),
+      index: 0,
+      depth: nextDepth,
+    });
+  }
+
+  return flattened;
+}
+
 export function getFileExtension(filePath: string): string {
   const lastDot = filePath.lastIndexOf('.');
   if (lastDot === -1 || lastDot === filePath.length - 1) {
