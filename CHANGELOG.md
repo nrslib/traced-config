@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-03-28
+
+### Added
+- `tracedConfig()` のトップレベル `defaultSources` を追加し、`env` / `cli` ソースの既定有効・無効を全キー一括で設定可能に (#19)
+- `getSchema()` に `defaultSources` を反映したマージ後の `sources` 情報を含め、実際に評価されるソース設定を確認可能に (#19)
+
+### Internal
+- `traced-config` の内部処理を schema 解決・値解決・ファイル読み込みに分割し、責務を整理 (#19)
+- エントリポイントの構造制約テストと `defaultSources` 契約テストを追加し、回帰検知を強化 (#19)
+
 ## [0.2.0] - 2026-03-26
 
 ### Added
