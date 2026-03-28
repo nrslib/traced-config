@@ -16,6 +16,13 @@ function extractTypeBlock(source: string, typeName: string): string {
 }
 
 describe('types contract', () => {
+  it('should expose defaultSources in TracedConfigOptions', async () => {
+    const source = await readTypesSource();
+    const optionsBlock = extractTypeBlock(source, 'TracedConfigOptions');
+
+    expect(optionsBlock).toMatch(/\bdefaultSources\?: Partial<Pick<SourceToggles, 'env' \| 'cli'>>;/);
+  });
+
   it('should require doc metadata in SchemaEntry', async () => {
     const source = await readTypesSource();
     const schemaEntryBlock = extractTypeBlock(source, 'SchemaEntry');
